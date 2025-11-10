@@ -1,0 +1,138 @@
+---
+title: "Untitled"
+author: "J.Hart"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(shiny)
+library(sf)
+library(leaflet)
+library(classInt)
+library(dplyr)
+
+ui <- fluidPage(
+  titlePanel("Watershed Ranking with Shapefile Map"),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput("csvfile", "Upload CSV File", accept = ".csv"),
+      fileInput("shpfile", "Upload Shapefile (all files required)", multiple = TRUE,
+                accept = c('.shp','.dbf','.sbn','.sbx','.shx','.prj')),
+      uiOutput("multiplier_inputs")
+    ),
+    mainPanel(
+      leafletOutput("map", height = 600)
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  data <- reactive({
+    req(input$csvfile)
+    read.csv(input$csvfile$datapath, check.names = FALSE, stringsAsFactors = FALSE)
+  })
+  
+  numeric_cols <- reactive({
+    df <- data()
+    num_cols <- names(df)[sapply(df, is.numeric)]
+    setdiff(num_cols, names(df)[1])
+  })
+  
+  output$multiplier_inputs <- renderUI({
+    req(numeric_cols())
+    lapply(numeric_cols(), function(col) {
+      numericInput(inputId = paste0("mult_", col),
+                   label = paste("Multiplier for", col),
+                   value = 1, min = 0)
+    })
+  })
+  
+  shapefile <- reactive({
+    req(input$shpfile)
+    temp_dir <- tempdir()
+    for(i in 1:nrow(input$shpfile)){
+      file.rename(input$shpfile$datapath[i], file.path(temp_dir, input$shpfile$name[i]))
+    }
+    shp_path <- file.path(temp_dir, input$shpfile$name[grep("\\.shp$", input$shpfile$name)])
+    st_read(shp_path, quiet = TRUE)
+  })
+  
+  ranked_data <- reactive({
+    df <- data()
+    cols <- numeric_cols()
+    req(cols)
+    weighted_df <- df[, c(names(df)[1], cols), drop = FALSE]
+    for (col in cols) {
+      multiplier <- input[[paste0("mult_", col)]]
+      if (is.null(multiplier)) multiplier <- 1
+      weighted_df[[col]] <- weighted_df[[col]] * multiplier
+    }
+    weighted_df$RankSum <- rowSums(weighted_df[, cols], na.rm = TRUE)
+    weighted_df
+  })
+  
+  joined_sf <- reactive({
+    req(shapefile(), ranked_data())
+    shp <- shapefile()
+    rankdf <- ranked_data()
+    if (!("basin" %in% names(shp))) {
+      stop("Shapefile must contain a 'basin' column matching CSV first column")
+    }
+    shp %>%
+      left_join(rankdf, by = setNames(names(rankdf)[1], "basin"))
+  })
+  
+  output$map <- renderLeaflet({
+    shp <- joined_sf()
+    req(shp)
+    
+    pal_bins <- classIntervals(shp$RankSum, n = 3, style = "equal")
+    bins <- pal_bins$brks
+    pal <- colorBin(palette = "YlOrRd", domain = shp$RankSum, bins = bins, na.color = "transparent")
+    
+    leaflet(shp) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      addPolygons(
+        fillColor = ~pal(RankSum),
+        weight = 2,               # thicker border
+        opacity = 1,
+        color = "black",          # black outline
+        dashArray = "3",
+        fillOpacity = 0.7,
+        highlight = highlightOptions(
+          weight = 3,
+          color = "#666",
+          dashArray = "",
+          fillOpacity = 0.7,
+          bringToFront = TRUE),
+        label = ~paste0(basin, ": ", round(RankSum, 2))
+      ) %>%
+      addLabelOnlyMarkers(
+        data = shp,
+        lng = ~st_coordinates(st_centroid(geometry))[,1],
+        lat = ~st_coordinates(st_centroid(geometry))[,2],
+        label = ~basin,
+        labelOptions = labelOptions(noHide = TRUE, direction = "center",
+                                    textOnly = TRUE, style = list(
+                                      "font-weight" = "bold",
+                                      "color" = "black",
+                                      "font-size" = "12px",
+                                      "text-shadow" = "1px 1px 2px white"
+                                    ))
+      ) %>%
+      addLegend(pal = pal, values = shp$RankSum,
+                title = "Rank Sum",
+                position = "bottomright")
+  })
+}
+
+shinyApp(ui, server)
+
+```
+
