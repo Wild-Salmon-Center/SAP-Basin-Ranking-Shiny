@@ -11,32 +11,47 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(shiny)
+library(shinydashboard)
 library(sf)
 library(leaflet)
 library(classInt)
 library(dplyr)
 
-ui <- fluidPage(
-  titlePanel("SAP Basin Ranking Application"),
-  sidebarLayout(
-    sidebarPanel(
-      fileInput("csvfile", "Upload CSV File", accept = ".csv"),
-      fileInput("shpzip", "Upload Zipped Shapefile (.zip)", accept = ".zip"),
-      uiOutput("multiplier_inputs"),
-      hr(),
-      uiOutput("break_sliders_ui"),
-      hr(),
-      textOutput("total_basin_count"),
-      hr(),
-      downloadButton("downloadData", "Download Ranked Results CSV")
+ui <- dashboardPage(
+  dashboardHeader(title = "SAP Watershed Ranking Dashboard",
+                  titleWidth = 450),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Map and Table", tabName = "maptable", icon = icon("map"),
+               selected = TRUE)
     ),
-    mainPanel(
-      leafletOutput("map", height = 600),
-      hr(),
-      tableOutput("ranked_table")
+    fileInput("csvfile", "Upload CSV File", accept = ".csv"),
+    fileInput("shpzip", "Upload Zipped Shapefile (.zip)", accept = ".zip"),
+    uiOutput("multiplier_inputs"),
+    hr(),
+    uiOutput("break_sliders_ui"),
+    hr(),
+    downloadButton("downloadData", "Download Ranked Results CSV",
+                   style = "color: white; 
+                   background-color: #007BFF;
+                   border-color: #007BFF; 
+                   font-weight: bold;
+                   font-size: 14px;")
+  ),
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "maptable",
+              fluidRow(
+                box(width = 12, leafletOutput("map", height = 600))
+              ),
+              fluidRow(
+                box(width = 12, tableOutput("ranked_table"))
+              )
+      )
     )
   )
 )
+
 
 server <- function(input, output, session) {
   
@@ -51,6 +66,7 @@ server <- function(input, output, session) {
     setdiff(num_cols, names(df)[1])
   })
   
+  # Dynamic numeric inputs for multipliers shown in sidebar
   output$multiplier_inputs <- renderUI({
     req(numeric_cols())
     lapply(numeric_cols(), function(col) {
@@ -75,50 +91,48 @@ server <- function(input, output, session) {
   })
   
   ranked_data <- reactive({
-  df <- data()
-  cols <- numeric_cols()
-  req(cols)
-  weighted_df <- df[, c(names(df)[1], cols), drop = FALSE]
-  for (col in cols) {
-    multiplier <- input[[paste0("mult_", col)]]
-    # Default to 1 if NULL, NA or empty
-    if (is.null(multiplier) || is.na(multiplier) || multiplier == "") {
-      multiplier <- 1
+    df <- data()
+    cols <- numeric_cols()
+    req(cols)
+    weighted_df <- df[, c(names(df)[1], cols), drop = FALSE]
+    for (col in cols) {
+      multiplier <- input[[paste0("mult_", col)]]
+      # Default multiplier to 1 if blank or NULL
+      if (is.null(multiplier) || is.na(multiplier) || multiplier == "") {
+        multiplier <- 1
+      }
+      weighted_df[[col]] <- weighted_df[[col]] * multiplier
     }
-    weighted_df[[col]] <- weighted_df[[col]] * multiplier
-  }
-  weighted_df$`Total Score` <- rowSums(weighted_df[, cols], na.rm = TRUE)
+    weighted_df$`Total Score` <- rowSums(weighted_df[, cols], na.rm = TRUE)
     weighted_df %>% 
-      arrange(desc(`Total Score`)) %>% 
-      mutate(Rank = row_number())
+      arrange(desc(`Total Score`)) %>%
+      mutate(Rank = row_number()) 
   })
   
-  # Default breaks as equal thirds of the range of scores
   default_breaks <- reactive({
     scores <- ranked_data()[["Total Score"]]
     if (length(scores) == 0) return(NULL)
     quantile(scores, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE)
   })
   
-  # UI sliders for break adjustments with default values
   output$break_sliders_ui <- renderUI({
     req(default_breaks())
     breaks <- default_breaks()
     tagList(
-      sliderInput("break1", "Lower Break (Low/Medium):",
+      sliderInput("break1", "Low-Medium Break:",
                   min = floor(breaks[1]),
                   max = ceiling(breaks[4]),
-                  value = breaks[2], step = 1),
-      sliderInput("break2", "Upper Break (Medium/High):",
+                  value = breaks[2], step = 0.1),
+      sliderInput("break2", "Medium-High Break:",
                   min = floor(breaks[1]),
                   max = ceiling(breaks[4]),
-                  value = breaks[3], step = 1)
+                  value = breaks[3], step = 0.1)
     )
   })
   
   pal <- reactive({
     req(input$break1, input$break2)
-    bins <- sort(c(0, input$break1, input$break2, Inf))
+    bins <- sort(c(-Inf, input$break1, input$break2, Inf))
     colorBin(
       palette = c("red", "yellow", "olivedrab3"),
       domain = ranked_data()$`Total Score`,
@@ -151,12 +165,12 @@ server <- function(input, output, session) {
         opacity = 1,
         color = "black",
         dashArray = "3",
-        fillOpacity = 0.5,
+        fillOpacity = 0.7,
         highlight = highlightOptions(
           weight = 3,
           color = "#666",
           dashArray = "",
-          fillOpacity = 0.7,
+          fillOpacity = 0.5,
           bringToFront = TRUE),
         label = ~paste0(Basin, ": ", round(`Total Score`, 2))
       ) %>%
@@ -178,21 +192,10 @@ server <- function(input, output, session) {
        labels = c("High", "Medium", "Low"),
         title = "Total Score",
         position = "bottomright")
- #   addLegend(pal = pal_func,
- #               values = shp$`Total Score`,
- #               title = "Total Score",
- #               position = "bottomright")
-    
   })
-
   
   output$ranked_table <- renderTable({
     ranked_data()
-  })
-  
-  output$total_basin_count <- renderText({
-    count <- nrow(ranked_data())
-    paste("Total Basin Count:", count)
   })
   
   output$downloadData <- downloadHandler(
