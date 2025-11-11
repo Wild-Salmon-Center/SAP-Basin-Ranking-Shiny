@@ -108,11 +108,11 @@ server <- function(input, output, session) {
       sliderInput("break1", "Lower Break (Low/Medium):",
                   min = floor(breaks[1]),
                   max = ceiling(breaks[4]),
-                  value = breaks[2], step = 1),
+                  value = breaks[2], step = 0.5),
       sliderInput("break2", "Upper Break (Medium/High):",
                   min = floor(breaks[1]),
                   max = ceiling(breaks[4]),
-                  value = breaks[3], step = 1)
+                  value = breaks[3], step = 0.5)
     )
   })
   
