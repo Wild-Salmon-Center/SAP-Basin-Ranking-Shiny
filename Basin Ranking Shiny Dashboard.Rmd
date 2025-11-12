@@ -72,7 +72,7 @@ server <- function(input, output, session) {
     lapply(numeric_cols(), function(col) {
       numericInput(
         inputId = paste0("mult_", col),
-        label = paste("Multiplier for", col),
+        label = paste(col, "Multiplier"),
         value = 1,
         min = 0
       )
@@ -132,7 +132,7 @@ server <- function(input, output, session) {
   
   pal <- reactive({
     req(input$break1, input$break2)
-    bins <- sort(c(-Inf, input$break1, input$break2, Inf))
+    bins <- sort(c(0, input$break1, input$break2, Inf))
     colorBin(
       palette = c("red", "yellow", "olivedrab3"),
       domain = ranked_data()$`Total Score`,
@@ -158,7 +158,7 @@ server <- function(input, output, session) {
     pal_func <- pal()
     
     leaflet(shp) %>%
-      addProviderTiles("Stadia.StamenTerrain") %>%
+      addProviderTiles("Esri.WorldTopoMap") %>%
       addPolygons(
         fillColor = ~pal_func(`Total Score`),
         weight = 2,
@@ -190,7 +190,7 @@ server <- function(input, output, session) {
       addLegend(
         colors = c("green", "yellow", "red"),
        labels = c("High", "Medium", "Low"),
-        title = "Total Score",
+        title = "Basin Rank",
         position = "bottomright")
   })
   
