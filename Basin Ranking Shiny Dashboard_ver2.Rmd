@@ -64,7 +64,7 @@ ui <- dashboardPage(
           tags$div(
             class = "panel-heading",
             tags$h4(class = "panel-title",
-                    tags$a("Score Attributes", "data-toggle" = "collapse", href = "#attrPanel",
+                    tags$a("Metric Selector", "data-toggle" = "collapse", href = "#attrPanel",
                            style = "color:black;font-size:18px;font-weight:bold;"))
           ),
           tags$div(
@@ -86,7 +86,7 @@ ui <- dashboardPage(
           tags$div(
             class = "panel-heading",
             tags$h4(class = "panel-title",
-                    tags$a("Score Multipliers", "data-toggle" = "collapse", href = "#multPanel",
+                    tags$a("Metric Multipliers", "data-toggle" = "collapse", href = "#multPanel",
                            style = "color:black;font-size:18px;font-weight:bold;"))
           ),
           tags$div(
@@ -103,7 +103,7 @@ ui <- dashboardPage(
           tags$div(
             class = "panel-heading",
             tags$h4(class = "panel-title",
-                    tags$a("Score Thresholds", "data-toggle" = "collapse", href = "#breakPanel",
+                    tags$a("Rank Thresholds", "data-toggle" = "collapse", href = "#breakPanel",
                            style = "color:black;font-size:18px;font-weight:bold;"))
           ),
           tags$div(
@@ -118,6 +118,12 @@ ui <- dashboardPage(
         )
       ),
       hr(),
+      
+      # Add basin count text to side panel
+      textOutput("total_basin_count"),
+      hr(),
+      
+      
       downloadButton("downloadData", "Download Ranked Results CSV",
                    style = "color: white; 
                    background-color: #007BFF;
@@ -217,7 +223,7 @@ numeric_cols <- reactive({
     req(cols)
     checkboxGroupInput(
       inputId = "selected_attrs",
-      label = "Select Numeric Attributes to Include in Total Score",
+      label = "Select Metrics to Include in Total Score",
       choices = cols,
       selected = cols  # default all selected
     )
@@ -228,7 +234,7 @@ numeric_cols <- reactive({
     lapply(numeric_cols(), function(col) {
       numericInput(
         inputId = paste0("mult_", col),
-        label = paste("Multiplier for", col),
+        label = paste(col, "Multiplier"),
         value = 1,
         min = 0
       )
@@ -327,7 +333,7 @@ numeric_cols <- reactive({
 
     leaflet(shp) %>%
       clearShapes() %>% 
-      addProviderTiles("Esri.WorldTopoMap") %>%
+      addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
       addPolygons(
         fillColor = ~pal_func(`Total Score`),
         weight = 2,
@@ -341,7 +347,8 @@ numeric_cols <- reactive({
           dashArray = "",
           fillOpacity = 0.5,
           bringToFront = TRUE),
-        label = ~paste0(Basin, ": ", round(`Total Score`, 2))
+        label = ~paste0(Basin, ": ", round(`Total Score`, 2)),
+        group = "Basins"
       ) %>%
       addLabelOnlyMarkers(
         data = shp,
@@ -351,7 +358,7 @@ numeric_cols <- reactive({
         labelOptions = labelOptions(noHide = TRUE, 
                                     direction = "center",
                                     textOnly = TRUE, 
-                                    textsize = "14px", # Sets font size, label box auto-sizes around it
+                                    textsize = "11px", # Sets font size, label box auto-sizes around it
                                     style = list(
                                       "font-weight" = "bold",
                                       "width" = "auto",
@@ -361,13 +368,19 @@ numeric_cols <- reactive({
                                        "text-shadow" = "-1px -1px 0 white,  
                                                         1px -1px 0 white,
                                                        -1px 1px 0 white,
-                                                        1px 1px 0 white"))
+                                                        1px 1px 0 white")),
+        group = "Labels"
         ) %>%
         addLegend(
         colors = c("green", "yellow", "red"),
        labels = c("High", "Medium", "Low"),
         title = "Basin Rank",
-        position = "bottomright")
+        position = "bottomright") %>% 
+    addLayersControl(
+    baseGroups = c("Base Map"),
+    overlayGroups = c("Basins", "Labels"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
   })
 
 output$ranked_table <- DT::renderDataTable({
@@ -469,6 +482,12 @@ output$score_plot <- renderPlot({
     }
   )
   
+  
+   output$total_basin_count <- renderText({
+    count <- nrow(ranked_data())
+    paste("Total Basin Count:", count)
+  })
+  
   output$download_map_html <- downloadHandler(
   filename = function() {
     paste0("watershed_map_", Sys.Date(), ".html")
@@ -477,18 +496,61 @@ output$score_plot <- renderPlot({
     shp <- joined_sf()
     req(shp)
     pal_func <- pal()
-    shp$fillColor <- pal_func(shp$`Total Score`)
-    
-    m <- mapview(
-      shp,
-      legend = TRUE,
-      col.regions = shp$fillColor,
-      alpha = 0.7,
-      lwd = 2,
-      color = "black"
-    )
+
+   m <-  leaflet(shp) %>%
+      clearShapes() %>% 
+      addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
+      addPolygons(
+        fillColor = ~pal_func(`Total Score`),
+        weight = 2,
+        opacity = 1,
+        color = "black",
+        dashArray = "3",
+        fillOpacity = 0.7,
+        highlight = highlightOptions(
+          weight = 3,
+          color = "#666",
+          dashArray = "",
+          fillOpacity = 0.5,
+          bringToFront = TRUE),
+        label = ~paste0(Basin, ": ", round(`Total Score`, 2)),
+        group = "Basins"
+      ) %>%
+      addLabelOnlyMarkers(
+        data = shp,
+        lng = ~st_coordinates(st_centroid(geometry))[,1],
+        lat = ~st_coordinates(st_centroid(geometry))[,2],
+        label = ~Basin,
+        labelOptions = labelOptions(noHide = TRUE, 
+                                    direction = "center",
+                                    textOnly = TRUE, 
+                                    textsize = "14px", # Sets font size, label box auto-sizes around it
+                                    style = list(
+                                      "font-weight" = "bold",
+                                      "width" = "auto",
+                                      "color" = "black",
+                                     # "font-family" = "serif",
+                                     # "font-size" = "12px",
+                                       "text-shadow" = "-1px -1px 0 white,  
+                                                        1px -1px 0 white,
+                                                       -1px 1px 0 white,
+                                                        1px 1px 0 white")),
+        group = "Labels"
+        ) %>%
+        addLegend(
+        colors = c("green", "yellow", "red"),
+       labels = c("High", "Medium", "Low"),
+        title = "Basin Rank",
+        position = "bottomright") %>% 
+    addLayersControl(
+    baseGroups = c("Base Map"),
+    overlayGroups = c("Basins", "Labels"),
+    options = layersControlOptions(collapsed = TRUE)
+  )
     # Save as html file instead of png
-    mapview::mapshot(m, url = file, remove_url = FALSE)
+    mapview::mapshot(m, url = file, remove_url = FALSE,
+                     remove_controls = c("zoomControl", "layersControl", "homeButton", "scaleBar"
+))
   }
 )
 
