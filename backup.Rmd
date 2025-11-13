@@ -30,19 +30,19 @@ plot(pressure)
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 ```{r}
 
-# Attach Packages
+# Load packages
 
 library(shiny)
 library(shinydashboard)
-library(sf)
 library(leaflet)
-library(classInt)
+library(leaflet.extras2)
+library(sf)
 library(dplyr)
 library(DT)
 library(ggplot2)
 
 
-# Configure Shiny Dashboard
+## User interface setup
 
 ui <- dashboardPage(
   dashboardHeader(title = "SAP Basin Ranking App",
@@ -53,6 +53,7 @@ ui <- dashboardPage(
       sidebarMenu(
         menuItem("Map and Table", tabName = "maptable", icon = icon("map"), selected = TRUE)
       ),
+      
       # Inputs accordion
       tags$div(
         class = "panel-group",
@@ -73,6 +74,29 @@ ui <- dashboardPage(
           )
         )
       ),
+      
+        # Score Attribute Selector
+      tags$div(
+        class = "panel-group",
+        tags$div(
+          class = "panel panel-default",
+          tags$div(
+            class = "panel-heading",
+            tags$h4(class = "panel-title",
+                    tags$a("Score Attributes", "data-toggle" = "collapse", href = "#attrPanel",
+                           style = "color:black;font-size:18px;font-weight:bold;"))
+          ),
+          tags$div(
+            id = "attrPanel", class = "panel-collapse collapse in",
+            tags$div(
+              class = "panel-body",
+              uiOutput("attr_selector")
+            )
+          )
+        )
+      ),
+      
+  
       # Multipliers accordion
       tags$div(
         class = "panel-group",
@@ -136,11 +160,8 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "maptable",
               fluidRow(
-                box(width = 12, 
-                    leafletOutput("map", height = 600) #,
-                  #  downloadButton("download_map_img", "Download Map as PNG",
-                  #                 style = "color:white; background-color:#008CBA; font-weight:bold; font-size:16px; padding:10px 20px;")
-                    ) # widened map box
+                box(width = 12, leafletOutput("map", height = 600)
+                 )
               ),
               fluidRow(
                 box(width = 12,
@@ -153,7 +174,7 @@ ui <- dashboardPage(
                           class = "panel-heading",
                           tags$h4(class = "panel-title",
                                   tags$a("Basin Rank Table", "data-toggle" = "collapse", href = "#tablePanel",
-                                         style = "color:black;background-color:#ADD8E6;"))
+                                         style = "color:black;font-size:18px;font-weight:bold;"))
                         ),
                         tags$div(
                           id = "tablePanel", class = "panel-collapse collapse",
@@ -174,7 +195,7 @@ ui <- dashboardPage(
                           class = "panel-heading",
                           tags$h4(class = "panel-title",
                                   tags$a("Ranking Chart", "data-toggle" = "collapse", href = "#chartPanel",
-                                         style = "color:black;background-color:#ADD8E6;"))
+                                         style = "color:black;font-size:18px;font-weight:bold;"))
                         ),
                         tags$div(
                           id = "chartPanel", class = "panel-collapse collapse",
@@ -190,6 +211,8 @@ ui <- dashboardPage(
 )
 
 
+## Server Setup
+
 server <- function(input, output, session) {
 
   data <- reactive({
@@ -197,10 +220,23 @@ server <- function(input, output, session) {
     read.csv(input$csvfile$datapath, check.names = FALSE, stringsAsFactors = FALSE)
   })
 
-  numeric_cols <- reactive({
-    df <- data()
-    num_cols <- names(df)[sapply(df, is.numeric)]
-    setdiff(num_cols, names(df)[1])
+# Reactive: All numeric columns available for selection
+numeric_cols <- reactive({
+  df <- data()
+  if (is.null(df)) return(NULL)
+  num_cols <- names(df)[sapply(df, is.numeric)]
+  setdiff(num_cols, names(df)[1]) # Exclude first column (e.g. Basin)
+})
+  
+  output$attr_selector <- renderUI({
+    cols <- numeric_cols()
+    req(cols)
+    checkboxGroupInput(
+      inputId = "selected_attrs",
+      label = "Select Numeric Attributes to Include in Total Score",
+      choices = cols,
+      selected = cols  # default all selected
+    )
   })
 
   output$multiplier_inputs <- renderUI({
@@ -234,19 +270,21 @@ server <- function(input, output, session) {
   ranked_data <- reactive({
     df <- data()
     cols <- numeric_cols()
-    req(cols)
-    weighted_df <- df[, c(names(df)[1], cols), drop = FALSE]
-    for (col in cols) {
+    selected_cols <- input$selected_attrs
+    req(cols, selected_cols)
+    use_cols <- intersect(cols, selected_cols)
+    weighted_df <- df[, c(names(df)[1], use_cols), drop = FALSE]
+    for (col in use_cols) {
       multiplier <- input[[paste0("mult_", col)]]
-      if (is.null(multiplier) || is.na(multiplier) || multiplier == "") {
+      if (is.null(multiplier) || multiplier == "" || is.na(multiplier)) {
         multiplier <- 1
       }
       weighted_df[[col]] <- weighted_df[[col]] * multiplier
     }
-    weighted_df$`Total Score` <- rowSums(weighted_df[, cols], na.rm = TRUE)
+    weighted_df$`Total Score` <- rowSums(weighted_df[, use_cols], na.rm = TRUE)
     weighted_df %>%
       arrange(desc(`Total Score`)) %>%
-      mutate(Rank = row_number())
+      mutate(Rank = row_number()) 
   })
 
   default_breaks <- reactive({
@@ -336,7 +374,7 @@ server <- function(input, output, session) {
                                       "color" = "black",
                                      # "font-family" = "serif",
                                      # "font-size" = "12px",
-                                      "text-shadow" = "-1px -1px 0 white,  
+                                       "text-shadow" = "-1px -1px 0 white,  
                                                         1px -1px 0 white,
                                                        -1px 1px 0 white,
                                                         1px 1px 0 white"))
@@ -345,7 +383,8 @@ server <- function(input, output, session) {
         colors = c("green", "yellow", "red"),
        labels = c("High", "Medium", "Low"),
         title = "Basin Rank",
-        position = "bottomright")
+        position = "bottomright") %>% 
+    addEasyprint() 
   })
 
 output$ranked_table <- DT::renderDataTable({
@@ -413,28 +452,28 @@ output$score_plot <- renderPlot({
   legend_labels <- c(red = "Low", yellow = "Medium", green = "High")
 
   # Map fill colors to break bins
-  color_map <- c(red = "red", yellow = "yellow", green = "olivedrab3")
+  color_map <- c(red = "red", yellow = "yellow", green = "green")
 
   # Lollipop chart
   ggplot(df, aes(x = Basin, y = `Total Score`, color = ColorClass)) +
     geom_segment(aes(xend = Basin, y = 0, yend = `Total Score`), size = 1.5) +
     geom_point(size = 5) +
     coord_flip() +
-    scale_y_continuous(limits = c(0,0)) +
+   # scale_y_continuous(limits = c(0,0) +
     scale_color_manual(
       values = color_map,
       name = "Score Group",
       labels = legend_labels
     ) +
-    theme_dark() +
+    theme_linedraw() +
     theme(
       legend.position = "top",
       axis.text.y = element_text(size = 12),
-      axis.title.y = element_text(size = 16),
-      axis.title.x = element_text(size = 16),
-      axis.text.x = element_text(size = 12)
+      axis.title.y = element_text(size = 18),
+      axis.title.x = element_text(size = 18),
+      axis.text.x = element_text(size = 16)
     ) +
-    labs(x = "Basin", y = "Total Score", title = "Subwatershed Ranking ")
+    labs(x = "Basin", y = "Total Score", title = "")
 })
 
 
@@ -447,6 +486,7 @@ output$score_plot <- renderPlot({
     }
   )
   
+
 }
 
 # Launch Shiny App
