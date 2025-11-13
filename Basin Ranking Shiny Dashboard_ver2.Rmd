@@ -20,6 +20,7 @@ library(leaflet)
 library(classInt)
 library(dplyr)
 library(DT)
+library(ggplot2)
 
 # Configure Shiny Dashboard
 
@@ -115,7 +116,7 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "maptable",
               fluidRow(
-                box(width = 12, leafletOutput("map", height = 600))
+                box(width = 12, leafletOutput("map", height = 600)) # widened map box
               ),
               fluidRow(
                 box(width = 12,
@@ -128,11 +129,32 @@ ui <- dashboardPage(
                           class = "panel-heading",
                           tags$h4(class = "panel-title",
                                   tags$a("Basin Rank Table", "data-toggle" = "collapse", href = "#tablePanel",
-                                         style = "color:black;font-size:18px;font-weight:bold;"))
+                                         style = "color:black;background-color:#ADD8E6;"))
                         ),
                         tags$div(
                           id = "tablePanel", class = "panel-collapse collapse",
                           tags$div(class = "panel-body", DT::dataTableOutput("ranked_table"))
+                        )
+                      )
+                    )
+                )
+              ),
+              fluidRow(
+                box(width = 12,
+                    # Ranking Chart Accordion
+                    tags$div(
+                      class = "panel-group",
+                      tags$div(
+                        class = "panel panel-default",
+                        tags$div(
+                          class = "panel-heading",
+                          tags$h4(class = "panel-title",
+                                  tags$a("Ranking Chart", "data-toggle" = "collapse", href = "#chartPanel",
+                                         style = "color:black;background-color:#ADD8E6;"))
+                        ),
+                        tags$div(
+                          id = "chartPanel", class = "panel-collapse collapse",
+                          tags$div(class = "panel-body", plotOutput("score_plot", height = "800px"))
                         )
                       )
                     )
@@ -142,6 +164,7 @@ ui <- dashboardPage(
     )
   )
 )
+
 
 server <- function(input, output, session) {
 
@@ -169,15 +192,20 @@ server <- function(input, output, session) {
   })
 
   shapefile <- reactive({
-    req(input$shpzip)
-    temp_dir <- tempdir()
-    unzip(input$shpzip$datapath, exdir = temp_dir)
-    shp_path <- list.files(temp_dir, pattern = "\\.shp$", full.names = TRUE)
-    if (length(shp_path) == 0) {
-      stop("No shapefile (.shp) found in the uploaded zip")
-    }
-    sf::st_read(shp_path[1], quiet = TRUE)
-  })
+  req(input$shpzip)
+  temp_dir <- tempdir()
+  # Remove old shapefile content in temp_dir before unzipping the new upload
+  # Remove only files, not folders/subdirectories
+  file.remove(list.files(temp_dir, full.names = TRUE))
+  unzip(input$shpzip$datapath, exdir = temp_dir)
+  shp_path <- list.files(temp_dir, pattern = "\\.shp$", full.names = TRUE)
+  if (length(shp_path) == 0) {
+    stop("No shapefile (.shp) found in the uploaded zip")
+  }
+  sf::st_read(shp_path[1], quiet = TRUE) %>% 
+  sf::st_transform(4326)
+})
+
 
   ranked_data <- reactive({
     df <- data()
@@ -252,6 +280,7 @@ server <- function(input, output, session) {
     pal_func <- pal()
 
     leaflet(shp) %>%
+      clearShapes() %>% 
       addProviderTiles("Esri.WorldTopoMap") %>%
       addPolygons(
         fillColor = ~pal_func(`Total Score`),
@@ -273,11 +302,16 @@ server <- function(input, output, session) {
         lng = ~st_coordinates(st_centroid(geometry))[,1],
         lat = ~st_coordinates(st_centroid(geometry))[,2],
         label = ~Basin,
-        labelOptions = labelOptions(noHide = TRUE, direction = "center",
-                                    textOnly = TRUE, style = list(
+        labelOptions = labelOptions(noHide = TRUE, 
+                                    direction = "center",
+                                    textOnly = TRUE, 
+                                    textsize = "14px", # Sets font size, label box auto-sizes around it
+                                    style = list(
                                       "font-weight" = "bold",
+                                      "width" = "auto",
                                       "color" = "black",
-                                      "font-size" = "14px",
+                                     # "font-family" = "serif",
+                                     # "font-size" = "12px",
                                       "text-shadow" = "-1px -1px 0 white,  
                                                         1px -1px 0 white,
                                                        -1px 1px 0 white,
@@ -333,6 +367,52 @@ df$ColorClass <- cut(
   )
 })
 
+output$score_plot <- renderPlot({
+  df <- ranked_data()
+  req(df)
+  bins <- sort(c(-Inf, input$break1, input$break2, Inf))
+  colors <- c("red", "yellow", "green")
+
+  # Assign color class for break bins
+  df$ColorClass <- cut(
+    df$`Total Score`,
+    breaks = bins,
+    labels = colors,
+    include.lowest = TRUE,
+    right = TRUE
+  )
+
+  # Keep basins in order by rank for plotting
+  df$Basin <- factor(df$Basin, levels = df$Basin[order(df$Rank)])
+
+  # Set legend labels
+  legend_labels <- c(red = "Low", yellow = "Medium", green = "High")
+
+  # Map fill colors to break bins
+  color_map <- c(red = "red", yellow = "yellow", green = "olivedrab3")
+
+  # Lollipop chart
+  ggplot(df, aes(x = Basin, y = `Total Score`, color = ColorClass)) +
+    geom_segment(aes(xend = Basin, y = 0, yend = `Total Score`), size = 1.5) +
+    geom_point(size = 5) +
+    coord_flip() +
+    scale_y_continuous(limits = c(0,0)) +
+    scale_color_manual(
+      values = color_map,
+      name = "Score Group",
+      labels = legend_labels
+    ) +
+    theme_dark() +
+    theme(
+      legend.position = "top",
+      axis.text.y = element_text(size = 12),
+      axis.title.y = element_text(size = 16),
+      axis.title.x = element_text(size = 16),
+      axis.text.x = element_text(size = 12)
+    ) +
+    labs(x = "Basin", y = "Total Score", title = "Basin Ranking Lollipop Chart")
+})
+
 
   output$downloadData <- downloadHandler(
     filename = function() {
@@ -342,6 +422,8 @@ df$ColorClass <- cut(
       write.csv(ranked_data(), file, row.names = FALSE)
     }
   )
+  
+  
 }
 
 # Launch Shiny App
