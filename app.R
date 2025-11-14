@@ -2,6 +2,7 @@ library(shiny)
 library(shinydashboard)
 library(sf)
 library(leaflet)
+library(leaflet.extras)
 library(classInt)
 library(dplyr)
 library(DT)
@@ -132,10 +133,10 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "maptable",
               fluidRow(
-                box(width = 12, leafletOutput("map", height = 600),
+                box(width = 12, leafletOutput("map", height = 600)
                     # Map export button
-                    downloadButton("download_map_html", "Download Map as HTML",
-                                   style = "color:white;background-color:#008CBA;font-weight:bold;padding:10px 20px;") 
+                  #  downloadButton("download_map_html", "Download Map as HTML",
+                  #                 style = "color:white;background-color:#008CBA;font-weight:bold;padding:10px 20px;") 
                 )
               ),
               fluidRow(
@@ -365,6 +366,10 @@ server <- function(input, output, session) {
         baseGroups = c("Base Map"),
         overlayGroups = c("Basins", "Labels"),
         options = layersControlOptions(collapsed = FALSE)
+      ) %>% 
+      addFullscreenControl(
+        position = "topleft", # Position of the fullscreen button (e.g., "topleft", "topright", "bottomleft", "bottomright")
+        pseudoFullscreen = FALSE # Set to TRUE for fullscreen to page width/height, FALSE for true browser fullscreen
       )
   })
   
@@ -473,70 +478,68 @@ server <- function(input, output, session) {
     paste("Total Basin Count:", count)
   })
   
-  output$download_map_html <- downloadHandler(
-    filename = function() {
-      paste0("watershed_map_", Sys.Date(), ".html")
-    },
-    content = function(file) {
-      shp <- joined_sf()
-      req(shp)
-      pal_func <- pal()
+ # output$download_map_html <- downloadHandler(
+#    filename = function() {
+#      paste0("watershed_map_", Sys.Date(), ".html")
+#    },
+#    content = function(file) {
+#      shp <- joined_sf()
+#      req(shp)
+#      pal_func <- pal()
       
-      m <-  leaflet(shp) %>%
-        clearShapes() %>% 
-        addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
-        addPolygons(
-          fillColor = ~pal_func(`Total Score`),
-          weight = 2,
-          opacity = 1,
-          color = "black",
-          dashArray = "3",
-          fillOpacity = 0.7,
-          highlight = highlightOptions(
-            weight = 3,
-            color = "#666",
-            dashArray = "",
-            fillOpacity = 0.5,
-            bringToFront = TRUE),
-          label = ~paste0(Basin, ": ", round(`Total Score`, 2)),
-          group = "Basins"
-        ) %>%
-        addLabelOnlyMarkers(
-          data = shp,
-          lng = ~st_coordinates(st_centroid(geometry))[,1],
-          lat = ~st_coordinates(st_centroid(geometry))[,2],
-          label = ~Basin,
-          labelOptions = labelOptions(noHide = TRUE, 
-                                      direction = "center",
-                                      textOnly = TRUE, 
-                                      textsize = "14px", # Sets font size, label box auto-sizes around it
-                                      style = list(
-                                        "font-weight" = "bold",
-                                        "width" = "auto",
-                                        "color" = "black",
-                                        # "font-family" = "serif",
-                                        # "font-size" = "12px",
-                                        "text-shadow" = "-1px -1px 0 white,  
-                                                        1px -1px 0 white,
-                                                       -1px 1px 0 white,
-                                                        1px 1px 0 white")),
-          group = "Labels"
-        ) %>%
-        addLegend(
-          colors = c("green", "yellow", "red"),
-          labels = c("High", "Medium", "Low"),
-          title = "Basin Rank",
-          position = "bottomright") %>% 
-        addLayersControl(
-          baseGroups = c("Base Map"),
-          overlayGroups = c("Basins", "Labels"),
-          options = layersControlOptions(collapsed = TRUE)
-        )
+#      m <-  leaflet(shp) %>%
+#        clearShapes() %>% 
+#        addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
+#         fillColor = ~pal_func(`Total Score`),
+#         weight = 2,
+#         opacity = 1,
+#          color = "black",
+#          dashArray = "3",
+#          fillOpacity = 0.7,
+#          highlight = highlightOptions(
+#            weight = 3,
+#            color = "#666",
+#            dashArray = "",
+#            fillOpacity = 0.5,
+#            bringToFront = TRUE),
+#          label = ~paste0(Basin, ": ", round(`Total Score`, 2)),
+#          group = "Basins"
+#        ) %>%
+#        addLabelOnlyMarkers(
+#          data = shp,
+#          lng = ~st_coordinates(st_centroid(geometry))[,1],
+#         lat = ~st_coordinates(st_centroid(geometry))[,2],
+#          label = ~Basin,
+#          labelOptions = labelOptions(noHide = TRUE, 
+#                                      direction = "center",
+#                                      textOnly = TRUE, 
+#                                      textsize = "14px", # Sets font size, label box auto-sizes around it
+#                                      style = list(
+#                                        "font-weight" = "bold",
+#                                        "width" = "auto",
+#                                        "color" = "black",
+#                                        # "font-family" = "serif",
+#                                        # "font-size" = "12px",
+#                                        "text-shadow" = "-1px -1px 0 white,  
+#                                                        1px -1px 0 white,
+#                                                       -1px 1px 0 white,
+#                                                        1px 1px 0 white")),
+#          group = "Labels"
+#        ) %>%
+#        addLegend(
+#          colors = c("green", "yellow", "red"),
+#          labels = c("High", "Medium", "Low"),
+#          title = "Basin Rank",
+#          position = "bottomright") %>% 
+#        addLayersControl(
+#          baseGroups = c("Base Map"),
+#          overlayGroups = c("Basins", "Labels"),
+ #         options = layersControlOptions(collapsed = TRUE)
+#        )
       # Save as html file
-      mapview::mapshot(m, url = file, selfcontained = TRUE)
-    }
-  )
-  
+   #   mapview::mapshot(m, url = file, selfcontained = TRUE)
+#    }
+#  )
   
 }
 
