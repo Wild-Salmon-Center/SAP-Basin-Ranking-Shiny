@@ -532,10 +532,8 @@ server <- function(input, output, session) {
           overlayGroups = c("Basins", "Labels"),
           options = layersControlOptions(collapsed = TRUE)
         )
-      # Save as html file instead of png
-      mapview::mapshot(m, url = file, remove_url = FALSE,
-                       remove_controls = c("zoomControl", "layersControl", "homeButton", "scaleBar"
-                       ))
+      # Save as html file
+      mapview::mapshot(m, url = file, selfcontained = TRUE)
     }
   )
   
