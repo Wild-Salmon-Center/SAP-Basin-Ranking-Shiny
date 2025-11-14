@@ -119,6 +119,16 @@ ui <- dashboardPage(
     )
   ),
   dashboardBody(
+    tags$style(HTML("
+    .leaflet .legend {
+      font-size: 18px !important;
+      line-height: 2em !important;
+    }
+    .leaflet .legend i {
+      width: 30px !important;
+      height: 30px !important;
+    }
+  ")),
     # Sidebar color override CSS
     tags$style(HTML("
       .skin-blue .main-sidebar, .skin-blue .left-side {
@@ -133,7 +143,7 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "maptable",
               fluidRow(
-                box(width = 12, leafletOutput("map", height = 600)
+                box(width = 12, leafletOutput("map", height = 700)
                     # Map export button
                   #  downloadButton("download_map_html", "Download Map as HTML",
                   #                 style = "color:white;background-color:#008CBA;font-weight:bold;padding:10px 20px;") 
@@ -153,7 +163,7 @@ ui <- dashboardPage(
                                          style = "color:black;font-size:18px;font-weight:bold;"))
                         ),
                         tags$div(
-                          id = "tablePanel", class = "panel-collapse collapse",
+                          id = "tablePanel", class = "panel-expanded",
                           tags$div(class = "panel-body", DT::dataTableOutput("ranked_table"))
                         )
                       )
@@ -320,6 +330,9 @@ server <- function(input, output, session) {
     leaflet(shp) %>%
       clearShapes() %>% 
       addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
+      addControl(
+        html = "<div style='font-size:24px; font-weight:bold; text-align:center; width:100%'>Subwatershed Ranking</div>",
+        position = "topleft") %>% 
       addPolygons(
         fillColor = ~pal_func(`Total Score`),
         weight = 2,
@@ -360,7 +373,7 @@ server <- function(input, output, session) {
       addLegend(
         colors = c("green", "yellow", "red"),
         labels = c("High", "Medium", "Low"),
-        title = "Basin Rank",
+        title = "Rank Category",
         position = "bottomright") %>% 
       addLayersControl(
         baseGroups = c("Base Map"),
@@ -370,7 +383,7 @@ server <- function(input, output, session) {
       addFullscreenControl(
         position = "topleft", # Position of the fullscreen button (e.g., "topleft", "topright", "bottomleft", "bottomright")
         pseudoFullscreen = FALSE # Set to TRUE for fullscreen to page width/height, FALSE for true browser fullscreen
-      )
+      ) 
   })
   
   output$ranked_table <- DT::renderDataTable({
@@ -438,7 +451,7 @@ server <- function(input, output, session) {
     legend_labels <- c(red = "Low", yellow = "Medium", green = "High")
     
     # Map fill colors to break bins
-    color_map <- c(red = "red", yellow = "yellow", green = "green")
+    color_map <- c(red = "red", yellow = "yellow", green = "olivedrab3")
     
     # Lollipop chart
     ggplot(df, aes(x = Basin, y = `Total Score`, color = ColorClass)) +
