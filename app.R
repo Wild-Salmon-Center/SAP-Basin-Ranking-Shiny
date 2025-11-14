@@ -50,7 +50,7 @@ ui <- dashboardPage(
           tags$div(
             class = "panel-heading",
             tags$h4(class = "panel-title",
-                    tags$a("Metric Selector", "data-toggle" = "collapse", href = "#attrPanel",
+                    tags$a("Parameter Selector", "data-toggle" = "collapse", href = "#attrPanel",
                            style = "color:black;font-size:18px;font-weight:bold;"))
           ),
           tags$div(
@@ -72,7 +72,7 @@ ui <- dashboardPage(
           tags$div(
             class = "panel-heading",
             tags$h4(class = "panel-title",
-                    tags$a("Metric Multipliers", "data-toggle" = "collapse", href = "#multPanel",
+                    tags$a("Parameter Multipliers", "data-toggle" = "collapse", href = "#multPanel",
                            style = "color:black;font-size:18px;font-weight:bold;"))
           ),
           tags$div(
