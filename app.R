@@ -262,16 +262,20 @@ server <- function(input, output, session) {
     weighted_df <- df[, c(names(df)[1], use_cols), drop = FALSE]
     for (col in use_cols) {
       multiplier <- input[[paste0("mult_", col)]]
-      if (is.null(multiplier) || multiplier == "" || is.na(multiplier)) {
-        multiplier <- 1
-      }
+      if (is.null(multiplier) || multiplier == "" || is.na(multiplier)) multiplier <- 1
       weighted_df[[col]] <- weighted_df[[col]] * multiplier
     }
-    weighted_df$`Total Score` <- rowSums(weighted_df[, use_cols], na.rm = TRUE)
+    selected_dat <- weighted_df[, use_cols, drop = FALSE]
+    if (ncol(selected_dat) == 1) {
+      weighted_df$`Total Score` <- unlist(selected_dat)
+    } else {
+      weighted_df$`Total Score` <- rowSums(selected_dat, na.rm = TRUE)
+    }
     weighted_df %>%
       arrange(desc(`Total Score`)) %>%
-      mutate(Rank = row_number()) 
+      mutate(Rank = row_number())
   })
+  
   
   default_breaks <- reactive({
     scores <- ranked_data()[["Total Score"]]
@@ -329,7 +333,9 @@ server <- function(input, output, session) {
     
     leaflet(shp) %>%
       clearShapes() %>% 
-      addProviderTiles("Esri.WorldTopoMap", group = "Base Map") %>%
+      addProviderTiles("Esri.WorldTopoMap", group = "Default Basemap") %>% # Default basemap
+      addProviderTiles("CartoDB.PositronOnlyLabels", group = "Places Labels") %>% 
+      addProviderTiles("Esri.WorldImagery", group = "Satellite Basemap") %>% # Satellite basemap
       addControl(
         html = "<div style='font-size:24px; font-weight:bold; text-align:center; width:100%'>Subwatershed Ranking</div>",
         position = "topleft") %>% 
@@ -368,7 +374,7 @@ server <- function(input, output, session) {
                                                         1px -1px 0 white,
                                                        -1px 1px 0 white,
                                                         1px 1px 0 white")),
-        group = "Labels"
+        group = "Basin Labels"
       ) %>%
       addLegend(
         colors = c("green", "yellow", "red"),
@@ -376,8 +382,8 @@ server <- function(input, output, session) {
         title = "Rank Category",
         position = "bottomright") %>% 
       addLayersControl(
-        baseGroups = c("Base Map"),
-        overlayGroups = c("Basins", "Labels"),
+        baseGroups = c("Default Basemap", "Satellite Basemap"),
+        overlayGroups = c("Basins", "Basin Labels", "Places Labels"),
         options = layersControlOptions(collapsed = FALSE)
       ) %>% 
       addFullscreenControl(
@@ -445,13 +451,17 @@ server <- function(input, output, session) {
     )
     
     # Keep basins in order by rank for plotting
-    df$Basin <- factor(df$Basin, levels = df$Basin[order(df$Rank)])
+    df <- df %>%
+      arrange(ColorClass,`Total Score`)
+    df$Basin <- factor(df$Basin, levels = df$Basin)
+    
     
     # Set legend labels
-    legend_labels <- c(red = "Low", yellow = "Medium", green = "High")
+    legend_labels <- c(green = "High", yellow = "Medium", red = "Low")
     
     # Map fill colors to break bins
     color_map <- c(red = "red", yellow = "yellow", green = "olivedrab3")
+
     
     # Lollipop chart
     ggplot(df, aes(x = Basin, y = `Total Score`, color = ColorClass)) +
